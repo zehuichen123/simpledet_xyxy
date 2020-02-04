@@ -342,29 +342,45 @@ class FPNRpnHead(RpnHead):
         bbox_target_weight = p.bbox_target.weight
         bbox_target_mean = p.bbox_target.mean
         bbox_target_std = p.bbox_target.std
+        # TODO: use encode_type = 'xywh' instead of xywh=True
         xywh = p.subsample_proposal.xywh
         if xywh is None:
-            xywh = False
+            xywh = True
 
         (proposal, proposal_score) = self.get_all_proposal(conv_fpn_feat, im_info)
 
-        (bbox, label, bbox_target, bbox_weight) = X.proposal_target(
-            rois=proposal,
-            gt_boxes=gt_bbox,
-            num_classes=num_reg_class,
-            class_agnostic=class_agnostic,
-            batch_images=batch_image,
-            proposal_without_gt=proposal_wo_gt,
+        # (bbox, label, bbox_target, bbox_weight) = X.proposal_target(
+        #     rois=proposal,
+        #     gt_boxes=gt_bbox,
+        #     num_classes=num_reg_class,
+        #     class_agnostic=class_agnostic,
+        #     batch_images=batch_image,
+        #     proposal_without_gt=proposal_wo_gt,
+        #     image_rois=image_roi,
+        #     fg_fraction=fg_fraction,
+        #     fg_thresh=fg_thr,
+        #     bg_thresh_hi=bg_thr_hi,
+        #     bg_thresh_lo=bg_thr_lo,
+        #     bbox_weight=bbox_target_weight,
+        #     bbox_mean=bbox_target_mean,
+        #     bbox_std=bbox_target_std,
+        #     name="subsample_proposal"
+        # )
+
+        (bbox, label, bbox_target, bbox_weight) = mx.sym.Custom(
+            proposal=proposal,
+            gt_bbox=gt_bbox,
+            num_class=num_reg_class,
+            add_gt_to_proposal=not proposal_wo_gt,
             image_rois=image_roi,
-            xywh=xywh,
             fg_fraction=fg_fraction,
             fg_thresh=fg_thr,
             bg_thresh_hi=bg_thr_hi,
             bg_thresh_lo=bg_thr_lo,
-            bbox_weight=bbox_target_weight,
-            bbox_mean=bbox_target_mean,
-            bbox_std=bbox_target_std,
-            name="subsample_proposal"
+            bbox_target_std=bbox_target_std,
+            xywh=xywh,
+            name="subsample_proposal",
+            op_type="bbox_target"
         )
 
         label = X.reshape(label, (-3, -2))

@@ -146,11 +146,13 @@ def clip_tiled_boxes(boxes, im_shape):
     return boxes
 
 
-def bbox_transform(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0)):
+def bbox_transform(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0), xywh=True):
     """Forward transform that maps proposal boxes to predicted ground-truth
     boxes using bounding-box regression deltas. See bbox_transform_inv for a
     description of the weights argument.
     """
+    if not xywh:
+        return bbox_transform_xyxy(boxes, deltas, weights)
     if boxes.shape[0] == 0:
         return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)
 
@@ -189,7 +191,48 @@ def bbox_transform(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0)):
     return pred_boxes
 
 
-def bbox_transform_inv(boxes, gt_boxes, inv_stds=(1.0, 1.0, 1.0, 1.0)):
+def bbox_transform_xyxy(boxes, deltas, weights=(1.0, 1.0, 1.0, 1.0)):
+    """Forward transform that maps proposal boxes to predicted ground-truth
+    boxes using bounding-box regression deltas. See bbox_transform_inv for a
+    description of the weights argument.
+    """
+    if boxes.shape[0] == 0:
+        return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)
+
+    boxes = boxes.astype(deltas.dtype, copy=False)
+
+    widths = boxes[:, 2] - boxes[:, 0] + 1.0
+    heights = boxes[:, 3] - boxes[:, 1] + 1.0
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+
+    wx1, wy1, wx2, wy2 = weights
+    dx1 = deltas[:, 0::4] / wx1
+    dy1 = deltas[:, 1::4] / wy1
+    dx2 = deltas[:, 2::4] / wx2
+    dy2 = deltas[:, 3::4] / wy2
+
+    pred_x1 = dx1 * widths[:, np.newaxis] + x1[:, np.newaxis]
+    pred_y1 = dy1 * heights[:, np.newaxis] + y1[:, np.newaxis]
+    pred_x2 = dx2 * widths[:, np.newaxis] + x2[:, np.newaxis]
+    pred_y2 = dy2 * heights[:, np.newaxis] + y2[:, np.newaxis]
+
+    pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)
+    # x1
+    pred_boxes[:, 0::4] = pred_x1
+    # y1
+    pred_boxes[:, 1::4] = pred_y1
+    # x2
+    pred_boxes[:, 2::4] = pred_x2
+    # y2
+    pred_boxes[:, 3::4] = pred_y2
+
+    return pred_boxes
+
+
+def bbox_transform_inv(boxes, gt_boxes, inv_stds=(1.0, 1.0, 1.0, 1.0), xywh=True):
     """Inverse transform that computes target bounding-box regression deltas
     given proposal boxes and ground-truth boxes. The weights argument should be
     a 4-tuple of multiplicative weights that are applied to the regression
@@ -202,6 +245,8 @@ def bbox_transform_inv(boxes, gt_boxes, inv_stds=(1.0, 1.0, 1.0, 1.0)):
     approximately the weights one would get from COCO using the previous unit
     stdev heuristic.
     """
+    if not xywh:
+        return bbox_transform_inv_xyxy(boxes, gt_boxes, inv_stds)
     ex_widths = boxes[:, 2] - boxes[:, 0] + 1.0
     ex_heights = boxes[:, 3] - boxes[:, 1] + 1.0
     ex_ctr_x = boxes[:, 0] + 0.5 * ex_widths
@@ -220,6 +265,43 @@ def bbox_transform_inv(boxes, gt_boxes, inv_stds=(1.0, 1.0, 1.0, 1.0)):
 
     targets = np.vstack((targets_dx, targets_dy, targets_dw,
                          targets_dh)).transpose()
+    return targets
+
+
+def bbox_transform_inv_xyxy(boxes, gt_boxes, inv_stds=(1.0, 1.0, 1.0, 1.0)):
+    """Inverse transform that computes target bounding-box regression deltas
+    given proposal boxes and ground-truth boxes. The weights argument should be
+    a 4-tuple of multiplicative weights that are applied to the regression
+    target.
+
+    In older versions of this code (and in py-faster-rcnn), the weights were set
+    such that the regression deltas would have unit standard deviation on the
+    training dataset. Presently, rather than computing these statistics exactly,
+    we use a fixed set of weights (10., 10., 5., 5.) by default. These are
+    approximately the weights one would get from COCO using the previous unit
+    stdev heuristic.
+    """
+    ex_x1 = boxes[:, 0]
+    ex_y1 = boxes[:, 1]
+    ex_x2 = boxes[:, 2]
+    ex_y2 = boxes[:, 3]
+
+    gt_x1 = gt_boxes[:, 0]
+    gt_y1 = gt_boxes[:, 1]
+    gt_x2 = gt_boxes[:, 2]
+    gt_y2 = gt_boxes[:, 3]
+
+    ex_widths = ex_x2 - ex_x1 + 1.0
+    ex_heights = ex_y2 - ex_y1 + 1.0
+
+    ix1, iy1, ix2, iy2 = inv_stds
+    target_dx1 = ix1 * (gt_x1 - ex_x1) / ex_widths
+    target_dy1 = iy1 * (gt_y1 - ex_y1) / ex_heights
+    target_dx2 = ix2 * (gt_x2 - ex_x2) / ex_widths
+    target_dy2 = iy2 * (gt_y2 - ex_y2) / ex_heights
+
+    targets = np.vstack((target_dx1, target_dy1, target_dx2,
+                         target_dy2)).transpose()
     return targets
 
 
@@ -335,4 +417,3 @@ def soft_nms(
         np.uint8(methods[method])
     )
     return dets, keep
-

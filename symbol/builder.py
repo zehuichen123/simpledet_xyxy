@@ -299,9 +299,9 @@ class RpnHead(object):
         bbox_target_weight = p.bbox_target.weight
         bbox_target_mean = p.bbox_target.mean
         bbox_target_std = p.bbox_target.std
-        xywh = p.xywh
+        xywh = p.subsample_proposal.xywh
         if xywh is None:
-            xywh = False
+            xywh = True
 
         (proposal, proposal_score) = self.get_all_proposal(conv_feat, im_info)
 
@@ -394,7 +394,7 @@ class BboxHead(object):
         num_reg_class = 2 if class_agnostic else num_class
         xywh = p.xywh
         if xywh is None:
-            xywh = False
+            xywh = True
 
         cls_logit, bbox_delta = self.get_output(conv_feat)
 
@@ -404,7 +404,16 @@ class BboxHead(object):
             name='bbox_delta_reshape'
         )
 
-        # 
+        # bbox_xyxy = X.decode_bbox(
+        #     rois=proposal,
+        #     bbox_pred=bbox_delta,
+        #     im_info=im_info,
+        #     name='decode_bbox',
+        #     bbox_mean=bbox_mean,
+        #     bbox_std=bbox_std,
+        #     class_agnostic=class_agnostic
+        # )
+
         bbox_xyxy = mx.sym.Custom(
             rois=proposal,
             bbox_pred=bbox_delta,

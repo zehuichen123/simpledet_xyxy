@@ -11,7 +11,7 @@ from .detectron_bbox_utils import bbox_overlaps, bbox_transform_inv
 
 
 def _sample_proposal(proposals, gt_bboxes, image_rois, fg_fraction, fg_thresh, bg_thresh_hi,
-                     bg_thresh_lo, inv_stds, num_reg_class):
+                     bg_thresh_lo, inv_stds, num_reg_class, xywh):
     """Generate a random sample of RoIs comprising foreground and background
     examples.
     """
@@ -60,7 +60,7 @@ def _sample_proposal(proposals, gt_bboxes, image_rois, fg_fraction, fg_thresh, b
     sampled_proposals = proposals[keep_inds]
     sampled_gt_bboxes = gt_bboxes[proposal_assigned_gt_index[keep_inds]]
 
-    bbox_targets = bbox_transform_inv(sampled_proposals, sampled_gt_bboxes, inv_stds)
+    bbox_targets = bbox_transform_inv(sampled_proposals, sampled_gt_bboxes, inv_stds, xywh)
     bbox_class = sampled_labels[:, None]
     if num_reg_class == 2:
         bbox_class = np.array(bbox_class > 0, dtype=bbox_targets.dtype)
@@ -95,7 +95,7 @@ def _expand_bbox_targets(bbox_target_data, num_bbox_reg_classes):
 
 class BboxTargetOperator(mx.operator.CustomOp):
     def __init__(self, num_classes, add_gt_to_proposal, image_rois, fg_fraction,
-                 fg_thresh, bg_thresh_hi, bg_thresh_lo, bbox_target_std):
+                 fg_thresh, bg_thresh_hi, bg_thresh_lo, bbox_target_std, xywh):
         super().__init__()
         self._num_classes = num_classes
         self._add_gt_to_proposal = add_gt_to_proposal
@@ -105,6 +105,7 @@ class BboxTargetOperator(mx.operator.CustomOp):
         self._bg_thresh_hi = bg_thresh_hi
         self._bg_thresh_lo = bg_thresh_lo
         self._bbox_target_std = bbox_target_std
+        self._xywh = xywh
 
     def forward(self, is_train, req, in_data, out_data, aux):
         proposals = in_data[0].asnumpy()  # N x K x 4
@@ -118,6 +119,7 @@ class BboxTargetOperator(mx.operator.CustomOp):
         bg_thresh_lo = self._bg_thresh_lo
         inv_stds = list(1.0 / std for std in self._bbox_target_std)
         num_reg_class = self._num_classes
+        xywh = self._xywh
 
         keep_proposals = []
         keep_gt_bboxes = []
@@ -148,14 +150,14 @@ class BboxTargetOperator(mx.operator.CustomOp):
                 bg_thresh_hi,
                 bg_thresh_lo,
                 inv_stds,
-                num_reg_class
+                num_reg_class,
+                xywh
             )
             sampled_proposal_i, bbox_class_i, bbox_target_i, bbox_target_weight_i = output
             sampled_proposal.append(sampled_proposal_i)
             bbox_class.append(bbox_class_i)
             bbox_target.append(bbox_target_i)
             bbox_target_weight.append(bbox_target_weight_i)
-
         sampled_proposal = np.array(sampled_proposal, dtype=np.float32)
         bbox_class = np.array(bbox_class, dtype=np.float32)
         bbox_target = np.array(bbox_target, dtype=np.float32)
@@ -172,8 +174,9 @@ class BboxTargetOperator(mx.operator.CustomOp):
 @mx.operator.register('bbox_target')
 class BboxTargetProp(mx.operator.CustomOpProp):
     def __init__(self, num_class, add_gt_to_proposal, image_rois, fg_fraction, fg_thresh,
-                 bg_thresh_hi, bg_thresh_lo, bbox_target_std):
+                 bg_thresh_hi, bg_thresh_lo, bbox_target_std, xywh='True'):
         super().__init__(need_top_grad=False)
+
         self._num_class = int(num_class)
         self._add_gt_to_proposal = literal_eval(add_gt_to_proposal)
         self._image_rois = int(image_rois)
@@ -182,6 +185,11 @@ class BboxTargetProp(mx.operator.CustomOpProp):
         self._bg_thresh_hi = float(bg_thresh_hi)
         self._bg_thresh_lo = float(bg_thresh_lo)
         self._bbox_target_std = literal_eval(bbox_target_std)
+        self._xywh = literal_eval(xywh)
+        if self._xywh:
+            print('bbox_target encode type: xywh')
+        else:
+            print('bbox_target encode type: xyxy')
 
     def list_arguments(self):
         return ['proposal', 'gt_bbox']
@@ -212,7 +220,8 @@ class BboxTargetProp(mx.operator.CustomOpProp):
             self._fg_thresh,
             self._bg_thresh_hi,
             self._bg_thresh_lo,
-            self._bbox_target_std
+            self._bbox_target_std,
+            self._xywh
         )
 
     def declare_backward_dependency(self, out_grad, in_data, out_data):

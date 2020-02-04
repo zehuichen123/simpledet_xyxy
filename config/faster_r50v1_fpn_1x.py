@@ -78,13 +78,14 @@ def get_config(is_train):
             fg_thr = 0.5
             bg_thr_hi = 0.5
             bg_thr_lo = 0.0
+            xywh = False
 
         class bbox_target:
             num_reg_class = 81
             class_agnostic = False
             weight = (1.0, 1.0, 1.0, 1.0)
             mean = (0.0, 0.0, 0.0, 0.0)
-            std = (0.1, 0.1, 0.2, 0.2)
+            std = (0.1, 0.1, 0.1, 0.1)
 
 
     class BboxParam:
@@ -93,11 +94,12 @@ def get_config(is_train):
         num_class   = 1 + 80
         image_roi   = 512
         batch_image = General.batch_image
+        xywh = RpnParam.subsample_proposal.xywh
 
         class regress_target:
             class_agnostic = False
             mean = (0.0, 0.0, 0.0, 0.0)
-            std = (0.1, 0.1, 0.2, 0.2)
+            std = (0.1, 0.1, 0.1, 0.1)
 
 
     class RoiParam:
